@@ -1,89 +1,222 @@
 library(httr)
 library(tidyverse)
 
-#mtg <- httr::GET("https://api.magicthegathering.io/v1/cards?name=cultivate")
-#mtg_data <- httr::content(mtg)$cards
+######## Get Bulk Card Data ------
 
-
-#mtg2 <- httr::GET("https://api.magicthegathering.io/v1/cards?page=515")
-#mtg_data2 <- httr::content(mtg2)$cards
-
-#test <- httr::content(mtg)
-
-
-######## Initial Get All Cards ------
-res <- httr::GET("http://api.scryfall.com/cards/search?order=name&q=-type%3Abasic+legal%3Acommander+lang%3Aen&unique=prints")
-resLS <- httr::content(res)$data
-
-t <- Sys.time()
-
-while (httr::content(res)$has_more == TRUE) {
-
-  res <- httr::GET(httr::content(res)$next_page)
-  resLS <- c(resLS, httr::content(res)$data)
-  Sys.sleep(.1)
+tdy_file <-
+  paste0("bulk_",
+         lubridate::today() %>% str_replace_all("-", "_"),
+         ".rds")
+if (file.exists(paste0("data/bulk/",tdy_file))) {
+  bulk_data <- read_rds(tdy_file)
+} else{
+  res_bulk <- jsonlite::fromJSON("https://api.scryfall.com/bulk-data/default-cards")
+  bulk_data <- jsonlite::fromJSON(res_bulk$download_uri)
+  file.remove(list.files("data/bulk",full.names = T))
+  write_rds(bulk_data, paste0("data/bulk/",tdy_file))
 }
 
-t2 <- Sys.time()
+# bulk_data <- read_rds("data/bulk.rds") %>% 
+#   as_tibble()
+
+######## Create Card Table ------
+make_mvid <- . %>% 
+  lapply(function(x) ifelse(is.null(x), NA, x)) %>% 
+  flatten() %>% 
+  unlist()
+
+bulk_data %>% 
+  filter(digital==F) %>% 
+  mutate(mvid = multiverse_ids %>% 
+           make_mvid()) %>% 
+  mutate(price = prices %>% pull(usd),
+         price_foil = prices %>% pull(usd),
+         price_tix = prices %>% pull(tix),
+         standard = legalities %>% pull(standard),
+         commander = legalities %>% pull(commander),
+         pauper = legalities %>% pull(pauper),
+         modern = legalities %>% pull(modern),
+         legacy = legalities %>% pull(legacy),
+         pioneer = legalities %>% pull(pioneer),
+         historic = legalities %>% pull(historic),
+         vintage = legalities %>% pull(vintage),
+         penny = legalities %>% pull(penny),
+         set = str_to_upper(set),
+         data_created_date = lubridate::today()) %>% 
+  select(mvid,
+         name,
+         set_name,
+         set_code = set,
+         set_type,
+         date_released = released_at,
+         mana_cost:toughness,
+         foil:variation, 
+         collector_number:flavor_text,
+         artist,
+         loyalty, 
+         hand_modifier,
+         price:price_tix,
+         standard:penny,
+         data_created_date,
+         scryfall_id = id) %>% 
+  bind_cols(.,
+            bulk_data %>% 
+              filter(digital==F) %>% 
+              select(color_identity) %>% 
+              flatten() %>% 
+              map( ~ tibble(color_id = .x %>% 
+                              unlist() %>%  
+                              paste(collapse = "|"))) %>% 
+              reduce(bind_rows)) %>% 
+  bind_cols(.,
+            bulk_data %>% 
+              filter(digital==F) %>% 
+              select(colors) %>% 
+              flatten() %>% 
+              map( ~ tibble(colors = .x %>% 
+                              unlist() %>%  
+                              paste(collapse = "|"))) %>% 
+              reduce(bind_rows)) %>% 
+  bind_cols(.,
+            bulk_data %>% 
+              filter(digital==F) %>% 
+              select(keywords) %>% 
+              flatten() %>% 
+              map( ~ tibble(keywords = .x %>% 
+                              unlist() %>%  
+                              paste(collapse = "|"))) %>% 
+              reduce(bind_rows)) %>% 
+  select(mvid,
+         name,
+         colors,
+         color_id,
+         set_name:artist,
+         keywords,
+         loyalty:price_tix,
+         standard:penny,
+         data_created_date,
+         scryfall_id) %>% 
+  rename(type = type_line,
+         has_foil = foil,
+         has_nonfoil = nonfoil,
+         is_promo = promo,
+         is_oversized = oversized,
+         is_reprint = reprint) %>% 
+  filter(set_type != "memorabilia") %>%
+  filter(set_type != "token") %>%
+  filter(set_type != "funny") %>%
+  filter(set_type != "planechase") %>%
+  arrange(date_released,name,set_name) %>% 
+  mutate(setcard_id = paste0(set_code,collector_number)) %>% 
+  as_tibble() -> dta
 
 
-print(t2-t)
+######## Add split cards -------
 
-tbl <- resLS %>%
-  map( ~ tibble(
-    name = .x$name,
-    type = .x$type_line,
-    rarity = .x$rarity,
-    colors = .x[["colors"]] %>% unlist() %>% paste0(collapse = "|"),
-    color_id = .x[["color_identity"]] %>% unlist() %>% paste0(collapse = "|"),
-    set_code = .x$set,
-    set_name = .x$set_name,
-    set_type = .x$set_type,
-    collector_number = .x$collector_number,
-    mvid = .x$multiverse_id,
-    artist = .x$artist,
-    date_released = .x$released_at,
-    is_reprint = .x$reprint,
-    price = ifelse(is.null(.x[["prices"]][["usd"]]), "0", .x[["prices"]][["usd"]]),
-    price_foil = ifelse(is.null(.x[["prices"]][["usd_foil"]]), "0", .x[["prices"]][["usd_foil"]])
-  )) %>%
-  reduce(bind_rows) %>%
-  unnest(cols = c(mvid)) %>%
-  mutate(data_created_date = lubridate::today()
-         # ,
-         # white = ifelse(str_detect(color_id, "W"), "W", ""),
-         # blue = ifelse(str_detect(color_id, "U"), "U", ""),
-         # black = ifelse(str_detect(color_id, "B"), "B", ""),
-         # red = ifelse(str_detect(color_id, "R"), "R", ""),
-         # green = ifelse(str_detect(color_id, "G"), "G", ""),
-         # color_id = paste0(white, blue, black, red, green),
-         # white = ifelse(str_detect(color_id, "W"), 1, 0),
-         # blue = ifelse(str_detect(color_id, "U"), 1, 0),
-         # black = ifelse(str_detect(color_id, "B"), 1, 0),
-         # red = ifelse(str_detect(color_id, "R"), 1, 0),
-         # green = ifelse(str_detect(color_id, "G"), 1, 0)
-  )
+split <- jsonlite::fromJSON("http://api.scryfall.com/cards/search?q=is%3Asplit")$data %>% 
+  select(name) %>% 
+  mutate(is_split = TRUE)
+
+dta <- dta %>% 
+  left_join(split, by = "name") %>% 
+  select(mvid:is_reprint, is_split, everything()) %>% 
+  mutate(is_split = ifelse(is.na(is_split),FALSE,is_split))
 
 
-# tbl %>%
-#   unnest(cols = c(mvid)) -> tbl
 
-
+######## Write All Cards Table to SQLite DB ------
 library(DBI)
 library(RSQLite)
 
+db <- dbConnect(SQLite(), "data/mtg_db.sqlite")
 
-# initial writing of the DB
-db <- dbConnect(SQLite(), "mtg_db.sqlite")
+dbWriteTable(db, "cards_all", dta, overwrite=T)
 
-dbWriteTable(db, "edhcards", tbl)
-
-dbReadTable(db, "edhcards") %>%
+dbReadTable(db, "cards_all") %>%
   head(10)
 
 dbDisconnect(db)
 
-write_rds(tbl, "edhcards.rds")
+######## Write All Cards Table to Postgres DB ------
+library(DBI)
+library(RPostgres)
+con <- dbConnect(RPostgres::Postgres()
+                 , host='localhost'
+                 , port='5432'
+                 , dbname='mtgdb'
+                 , user='postgres'
+                 , password=ifelse(exists('pw'),
+                                   pw,
+                                   askpass::askpass())
+                 )
+
+dbWriteTable(con, "cards_all_tmp", dta, temporary = T)
+
+dbExecute(con,
+          "INSERT INTO cards_all (mvid,name,colors,color_id,set_name,set_code,set_type,date_released,mana_cost,cmc,type,oracle_text,power,toughness,has_foil,has_nonfoil,is_oversized,is_promo,is_reprint,is_split,variation,collector_number,digital,rarity,flavor_text,artist,keywords,loyalty,hand_modifier,price,price_foil,price_tix,standard,commander,pauper,modern,legacy,pioneer,historic,vintage,penny,data_created_date,scryfall_id,setcard_id)
+          SELECT tmp.mvid,tmp.name,tmp.colors,tmp.color_id,tmp.set_name,tmp.set_code,tmp.set_type,tmp.date_released,tmp.mana_cost,tmp.cmc,tmp.type,tmp.oracle_text,tmp.power,tmp.toughness,tmp.has_foil,tmp.has_nonfoil,tmp.is_oversized,tmp.is_promo,tmp.is_reprint,tmp.is_split,tmp.variation,tmp.collector_number,tmp.digital,tmp.rarity,tmp.flavor_text,tmp.artist,tmp.keywords,tmp.loyalty,tmp.hand_modifier,tmp.price,tmp.price_foil,tmp.price_tix,tmp.standard,tmp.commander,tmp.pauper,tmp.modern,tmp.legacy,tmp.pioneer,tmp.historic,tmp.vintage,tmp.penny,tmp.data_created_date,tmp.scryfall_id,tmp.setcard_id
+          FROM cards_all_tmp tmp
+          LEFT JOIN cards_all act
+          ON tmp.setcard_id = act.setcard_id
+          WHERE act.setcard_id is null")
+
+dta <- dbReadTable(con, "cards_all")
+
+dbDisconnect(con)
+
+
+######################## Main Cards Table ---------------------
+# drops extras
+
+tbl <- dta %>% 
+  filter(!is.na(mvid)) %>% 
+  add_count(name, set_code) %>% 
+  rename(multiple_prints = n) %>% 
+  mutate(multiple_prints = ifelse(multiple_prints > 1, multiple_prints, NA)) %>% 
+  group_by(name, set_code) %>% 
+  mutate(main = ifelse(min(collector_number)==collector_number,1,NA),
+         main = ifelse(str_detect(type, "Basic Land"), NA, main)) %>% 
+  ungroup() %>% 
+  rename(card_id = id)
+
+
+######## Write All Cards Table to SQLite DB ------
+library(DBI)
+library(RSQLite)
+
+db <- dbConnect(SQLite(), "data/mtg_db.sqlite")
+
+dbWriteTable(db, "cards", tbl, overwrite=T)
+
+dbReadTable(db, "cards") %>%
+  head(10)
+
+dbDisconnect(db); rm(db)
+
+######## Write All Cards Table to Postgres DB ------
+library(DBI)
+library(RPostgres)
+con <- dbConnect(RPostgres::Postgres()
+                 , host='localhost'
+                 , port='5432'
+                 , dbname='mtgdb'
+                 , user='postgres'
+                 , password=ifelse(exists('pw'),
+                                   pw,
+                                   askpass::askpass())
+)
 
 
 
+
+dbWriteTable(con, "cards_tmp", tbl, temporary = T)
+
+dbExecute(con,
+          "INSERT INTO cards (mvid,name,colors,color_id,set_name,set_code,set_type,date_released,mana_cost,cmc,type,oracle_text,power,toughness,has_foil,has_nonfoil,is_oversized,is_promo,is_reprint,is_split,variation,collector_number,digital,rarity,flavor_text,artist,keywords,loyalty,hand_modifier,price,price_foil,price_tix,standard,commander,pauper,modern,legacy,pioneer,historic,vintage,penny,data_created_date,scryfall_id,setcard_id, card_id, multiple_prints, main)
+          SELECT tmp.mvid,tmp.name,tmp.colors,tmp.color_id,tmp.set_name,tmp.set_code,tmp.set_type,tmp.date_released,tmp.mana_cost,tmp.cmc,tmp.type,tmp.oracle_text,tmp.power,tmp.toughness,tmp.has_foil,tmp.has_nonfoil,tmp.is_oversized,tmp.is_promo,tmp.is_reprint,tmp.is_split,tmp.variation,tmp.collector_number,tmp.digital,tmp.rarity,tmp.flavor_text,tmp.artist,tmp.keywords,tmp.loyalty,tmp.hand_modifier,tmp.price,tmp.price_foil,tmp.price_tix,tmp.standard,tmp.commander,tmp.pauper,tmp.modern,tmp.legacy,tmp.pioneer,tmp.historic,tmp.vintage,tmp.penny,tmp.data_created_date,tmp.scryfall_id,tmp.setcard_id, tmp.card_id, tmp.multiple_prints, tmp.main
+          FROM cards_tmp tmp
+          LEFT JOIN cards_all act
+          ON tmp.setcard_id = act.setcard_id
+          WHERE act.setcard_id is null")
+
+dbDisconnect(con); rm(con)
