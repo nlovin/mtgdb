@@ -19,6 +19,11 @@ if (file.exists(paste0("data/bulk/",tdy_file))) {
 # bulk_data <- read_rds("data/bulk.rds") %>% 
 #   as_tibble()
 
+### Data updated at
+data_updated_at <- lubridate::with_tz(lubridate::as_datetime(res_bulk$updated_at),
+                           tzone = "America/New_York")
+
+
 ######## Create Card Table ------
 make_mvid <- . %>% 
   lapply(function(x) ifelse(is.null(x), NA, x)) %>% 
@@ -160,9 +165,45 @@ dbExecute(con,
           ON tmp.setcard_id = act.setcard_id
           WHERE act.setcard_id is null")
 
-dta <- dbReadTable(con, "cards_all")
+dta <- dbReadTable(con, "cards_all") %>% 
+  as_tibble()
 
+
+##### update price table with new daily data ----
+
+if (lubridate::today()==dbGetQuery(con, 
+                                   "select date
+                                   from price
+                                   order by date desc
+                                   limit 1") %>% 
+    pull(date) %>% 
+    lubridate::as_date()) {
+  print("Prices already updated today")
+}else{
+  dbWriteTable(
+    con, "price",
+    dta %>%
+      as_tibble() %>%
+      select(price,
+             price_foil,
+             price_tix,
+             setcard_id,
+             card_id = id) %>%
+      filter(!is.na(price) |
+               !is.na(price_foil) | !is.na(price_tix), ) %>%
+      mutate(date = lubridate::today()) %>%
+      select(date, price, price_foil, price_tix, setcard_id, card_id),
+    overwrite = F,
+    append = T
+  )
+}
+
+
+
+## DB Disconnect ----
 dbDisconnect(con)
+
+
 
 
 ######################## Main Cards Table ---------------------
