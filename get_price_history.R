@@ -30,11 +30,11 @@ get_set_prices <- function(set){
                    user='postgres',
                    password=pw)
   
-  set_urls <- dbReadTable(con,"cards") %>%
+  set_urls <- dbReadTable(con,"cards_all") %>%
     as_tibble() %>% 
     filter(set_name == set) %>% 
     filter(!str_detect(type, "Basic Land")) %>% 
-    filter(main == 1) %>% 
+    filter(ifelse(set_type == "masters", !is.na(id), main == 1)) %>% 
     mutate(name = str_remove_all(name, "'"),
            name = str_remove_all(name, ","),
            name = ifelse(is_split==T, str_replace(name, " // ","+"),name),
@@ -49,34 +49,37 @@ get_set_prices <- function(set){
     pull(name)
   
   
-  set_code <- dbReadTable(con,"cards") %>%
+  set_code <- dbReadTable(con,"cards_all") %>%
     as_tibble() %>% 
     filter(set_name == set) %>% 
     filter(!str_detect(type, "Basic Land")) %>% 
-    filter(main == 1) %>% 
+    filter(ifelse(set_type == "masters", !is.na(id), main == 1)) %>% 
     select(set_code) %>% 
     distinct() %>% 
     pull(set_code)
   
-  set_card_names <- dbReadTable(con,"cards") %>%
+  set_card_names <- dbReadTable(con,"cards_all") %>%
     as_tibble() %>% 
     filter(set_name == set) %>% 
     filter(!str_detect(type, "Basic Land")) %>% 
-    filter(main == 1) %>% 
+    filter(ifelse(set_type == "masters", !is.na(id), main == 1)) %>% 
     distinct() %>% 
     pull(name)
   
-  set_card_ids <- dbReadTable(con,"cards") %>%
+  set_card_ids <- dbReadTable(con,"cards_all") %>%
     as_tibble() %>% 
     filter(set_name == set) %>% 
     filter(!str_detect(type, "Basic Land")) %>% 
-    filter(main == 1) %>% 
+    filter(ifelse(set_type == "masters", !is.na(id), main == 1)) %>% 
     distinct() %>% 
     pull(setcard_id)
   
   loop_tbl <- bind_cols(set_urls,set_card_names,set_card_ids) %>% 
     rename(set_urls = 1, set_card_names = 2, setcard_id=3) %>% 
-    filter(!str_detect(set_card_names, "Guildgate"))
+    filter(!str_detect(set_card_names, "Guildgate")) %>% 
+    left_join(., dbReadTable(con,"cards_all") %>%
+                as_tibble() %>% 
+                select(id, setcard_id), by = "setcard_id")
 
   dbDisconnect(con)
   
