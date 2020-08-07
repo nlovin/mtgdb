@@ -43,3 +43,4 @@ mtg_db.sqlite
 
 # Ignore log files
 *.log
+data/
