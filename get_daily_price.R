@@ -3,7 +3,7 @@
 library(DBI)
 library(RPostgres)
 con <- dbConnect(RPostgres::Postgres()
-                 , host='192.168.1.84'
+                 , host='localhost'
                  , port='5432'
                  , dbname='mtgdb'
                  , user='postgres'
