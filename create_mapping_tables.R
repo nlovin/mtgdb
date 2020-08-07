@@ -28,6 +28,73 @@ dbDisconnect(con)
 
 
 
+price_tbl <- left_join(price, full_join(tbl %>% 
+                                           select(mvid,
+                                                  name,
+                                                  set_name,
+                                                  set_code,
+                                                  is_split,
+                                                  main,
+                                                  setcard_id,
+                                                  card_id) %>% 
+                                           filter(main == 1) %>% 
+                                           mutate(og_name = name) %>% 
+                                           mutate(name = ifelse(str_detect(name, "/") & is_split==F,
+                                                                str_remove_all(name, " //.+"),
+                                                                name),
+                                                  name = str_remove_all(name, ",")), 
+                                         price %>% 
+                                           select(name,set_name,set_code) %>% 
+                                           distinct(), 
+                                         by = c("name",
+                                                "set_code",
+                                                "set_name")) %>% 
+                          select(-og_name, -is_split, -main), 
+                        by= c("name",
+                              "set_code",
+                              "set_name")) %>% 
+  distinct() %>% 
+  select(date, price, setcard_id, card_id)
+
+
+
+con <- dbConnect(RPostgres::Postgres()
+                 , host='localhost'
+                 , port='5432'
+                 , dbname='mtgdb'
+                 , user='postgres'
+                 , password=ifelse(exists('pw'),
+                                   pw,
+                                   askpass::askpass())
+)
+
+# this is just keep a backup copy of the original price table
+db <- dbConnect(SQLite(), "data/mtg_db.sqlite")
+dbWriteTable(db, "price_history", price, overwrite=T)
+dbDisconnect(db)
+
+# write the the new mapped price table
+dbWriteTable(con, "price_history", price_tbl, overwrite=T)
+dbDisconnect(con)
+
+
+
+
+
+############### XXX ------------
+
+card_id_tbl <- dta %>% 
+  select(setcard_id, id, mvid)
+
+
+
+
+
+
+
+
+
+################ Build out ----------------
 
 tbl %>% 
   select(mvid,
