@@ -46,3 +46,5 @@ mtg_db.sqlite
 data/
 
 *.sqlite
+
+.DS_Store
