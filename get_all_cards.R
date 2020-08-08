@@ -23,7 +23,18 @@ if (file.exists(paste0("data/bulk/",tdy_file))) {
 data_updated_at <- lubridate::with_tz(lubridate::as_datetime(res_bulk$updated_at),
                            tzone = "America/New_York")
 
-
+### Store Password Locally ----
+if (exists(pw)) {
+  print("Password already stored")
+}else{
+pw <- askpass::askpass()
+}
+### Ask for server location
+if (exists(pw)) {
+  print("Hostname already stored")
+}else{
+host <- svDialogs::dlg_input(message="Enter host name: ") %>% .$res
+}
 ######## Create Card Table ------
 make_mvid <- . %>% 
   lapply(function(x) ifelse(is.null(x), NA, x)) %>% 
