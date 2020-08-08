@@ -188,7 +188,10 @@ get_set_prices <- function(set){
                hist %>% 
                  select(date, 
                         price, 
-                        setcard_id), 
+                        setcard_id) %>% left_join(.,dbReadTable(con,"cards_all") %>%
+                                                    as_tibble() %>% 
+                                                    select(card_id = id, setcard_id), by = "setcard_id") %>% 
+                 mutate(date = as.numeric(date)), 
                overwrite=F, 
                append=T)
 
