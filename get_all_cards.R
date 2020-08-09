@@ -20,8 +20,7 @@ if (file.exists(paste0("data/bulk/",tdy_file))) {
 #   as_tibble()
 
 ### Data updated at
-data_updated_at <- lubridate::with_tz(lubridate::as_datetime(res_bulk$updated_at),
-                           tzone = "America/New_York")
+data_updated_at <- lubridate::as_date(res_bulk$updated_at)
 
 ### Store Password Locally ----
 if (exists(pw)) {
@@ -157,7 +156,7 @@ dbDisconnect(db)
 library(DBI)
 library(RPostgres)
 con <- dbConnect(RPostgres::Postgres()
-                 , host='localhost'
+                 , host=host
                  , port='5432'
                  , dbname='mtgdb'
                  , user='postgres'
@@ -182,7 +181,7 @@ dta <- dbReadTable(con, "cards_all") %>%
 
 ##### update price table with new daily data ----
 
-if (lubridate::today()==dbGetQuery(con, 
+if (data_updated_at==dbGetQuery(con, 
                                    "select date
                                    from price
                                    order by date desc
@@ -202,14 +201,12 @@ if (lubridate::today()==dbGetQuery(con,
              card_id = id) %>%
       filter(!is.na(price) |
                !is.na(price_foil) | !is.na(price_tix), ) %>%
-      mutate(date = lubridate::today()) %>%
+      mutate(date = data_updated_at) %>%
       select(date, price, price_foil, price_tix, setcard_id, card_id),
     overwrite = F,
     append = T
   )
 }
-
-
 
 ## DB Disconnect ----
 dbDisconnect(con)
@@ -249,7 +246,7 @@ dbDisconnect(db); rm(db)
 library(DBI)
 library(RPostgres)
 con <- dbConnect(RPostgres::Postgres()
-                 , host='localhost'
+                 , host=host
                  , port='5432'
                  , dbname='mtgdb'
                  , user='postgres'
