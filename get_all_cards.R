@@ -33,7 +33,8 @@ if (exists("host")) {
   print("Hostname already stored")
 }else{
 host_tmp <- svDialogs::dlg_input(message="Enter last 2-3 digits of the host name: ") %>% .$res
-host <- paste0("192.168.1.",host_tmp); rm(host_tmp)
+
+host <- ifelse(host_tmp=="localhost","localhost", paste0("192.168.1.",host_tmp) );rm(host_tmp)
 }
 ######## Create Card Table ------
 make_mvid <- . %>% 
