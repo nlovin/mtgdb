@@ -23,16 +23,17 @@ if (file.exists(paste0("data/bulk/",tdy_file))) {
 data_updated_at <- lubridate::as_date(res_bulk$updated_at)
 
 ### Store Password Locally ----
-if (exists(pw)) {
+if (exists("pw")) {
   print("Password already stored")
 }else{
 pw <- askpass::askpass()
 }
 ### Ask for server location
-if (exists(pw)) {
+if (exists("host")) {
   print("Hostname already stored")
 }else{
-host <- svDialogs::dlg_input(message="Enter host name: ") %>% .$res
+host_tmp <- svDialogs::dlg_input(message="Enter last 2-3 digits of the host name: ") %>% .$res
+host <- paste0("192.168.1.",host_tmp); rm(host_tmp)
 }
 ######## Create Card Table ------
 make_mvid <- . %>% 
@@ -207,6 +208,46 @@ if (data_updated_at==dbGetQuery(con,
     append = T
   )
 }
+
+##### Update Legalities Table -----
+dta %>% 
+  select(card_id = id,setcard_id, standard:penny) -> ltmp
+
+## original table write
+#dbWriteTable(con, "legalities" ,ltmp)
+
+## write tmp table
+dbWriteTable(con, 
+             "legalities_tmp", 
+             ltmp, 
+             temporary = T,
+             overwrite=T)
+
+rm(ltmp)
+
+dbExecute(con,
+          "INSERT INTO legalities (card_id,setcard_id,standard,commander,pauper,modern,legacy)
+          SELECT tmp.card_id,tmp.setcard_id,tmp.standard,tmp.commander,tmp.pauper,tmp.modern,tmp.legacy
+          FROM legalities_tmp tmp
+          LEFT JOIN legalities act
+          ON tmp.setcard_id = act.setcard_id
+          WHERE act.setcard_id is null")
+
+dbExecute(con,
+          "UPDATE legalities l
+          SET 
+            standard = t.standard, 
+            commander = t.commander,
+            pauper = t.pauper,
+            modern = t.modern,
+            legacy = t.legacy,
+            pioneer = t.pioneer,
+            historic = t.historic,
+            vintage = t.vintage,
+            penny = t.penny
+          FROM legalities_tmp t
+          WHERE l.setcard_id = t.setcard_id"
+)
 
 ## DB Disconnect ----
 dbDisconnect(con)
